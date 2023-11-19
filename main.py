@@ -24,7 +24,7 @@ def get_weather_by_city(city):
 # Функция для вывода информации о погоде
 def print_weather_info(location, weather_data):
     print("Текущее время:", datetime.fromtimestamp(weather_data["dt"]).strftime('%Y-%m-%d %H:%M:%S'))
-    print("Местоположение:", location)
+    print("Название города:", location)
     print("Погодные условия:", weather_data["weather"][0]["description"])
     print("Текущая температура:", weather_data["main"]["temp"], "градусов по Цельсию")
     print("Ощущается как:", weather_data["main"]["feels_like"], "градусов по Цельсию")
