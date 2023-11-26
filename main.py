@@ -7,7 +7,14 @@ from datetime import datetime
 API_KEY = "149e2a0058107922f6aff6ee2e05113d"
 
 # Функция для получения информации о погоде по названию города
-def get_weather_by_city(city):
+def get_weather_by_city(city: str):
+    """
+    Получение информацию о погоде по названию города.
+
+    Аргумент:
+    city - название города.
+    """
+
     try:
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
         response = requests.get(url)
@@ -17,12 +24,20 @@ def get_weather_by_city(city):
         print_weather_info(city, weather_data)
         save_to_database((datetime.now(), city, weather_data["weather"][0]["description"], weather_data["main"]["temp"]))
     except requests.exceptions.HTTPError as err:
-        print(f"HTTP error occurred, попробуйте снова")
+        print(f"HTTP error occurred, попробуйте снова!")
     except requests.exceptions.RequestException as err:
-        print(f"Request exception occurred, попробуйте снова")
+        print(f"Request exception occurred, попробуйте снова!")
 
 # Функция для вывода информации о погоде
-def print_weather_info(location, weather_data):
+def print_weather_info(location: str, weather_data: dict):
+    """
+    Вывод информацию о погоде.
+
+    Аргументы:
+    location - местоположение;
+    weather_data - данные о погоде.
+    """
+
     print("Текущее время:", datetime.fromtimestamp(weather_data["dt"]).strftime('%Y-%m-%d %H:%M:%S'))
     print("Название города:", location)
     print("Погодные условия:", weather_data["weather"][0]["description"])
@@ -32,6 +47,10 @@ def print_weather_info(location, weather_data):
 
 # Функция для получения информации о погоде по текущему местоположению
 def get_weather_by_location():
+    """
+    Получение информации о погоде по текущему местоположению.
+    """
+
     try:
         location = geocoder.ip("me")
 
@@ -47,12 +66,19 @@ def get_weather_by_location():
         else:
             print("Не удалось определить текущее местоположение")
     except requests.exceptions.HTTPError as err:
-        print(f"HTTP error occurred, попробуйте снова")
+        print(f"HTTP error occurred, попробуйте снова!")
     except requests.exceptions.RequestException as err:
-        print(f"Request exception occurred, попробуйте снова")
+        print(f"Request exception occurred, попробуйте снова!")
 
 # Функция для сохранения результатов запросов в базу данных
-def save_to_database(data):
+def save_to_database(data: tuple):
+    """
+    Сохранение результатов запросов в базу данных.
+
+    Аргумент:
+    data - данные для сохранения.
+    """
+
     try:
         connection = sqlite3.connect("weather.db")
         cursor = connection.cursor()
@@ -70,10 +96,17 @@ def save_to_database(data):
         connection.commit()
         connection.close()
     except sqlite3.Error as error:
-        print("Ошибка при работе с базой данных:", error)
+        print("Ошибка при работе с базой данных, попробуйте снова!")
 
 # Функция для вывода последних результатов запросов из базы данных
-def print_history(n):
+def print_history(n: int):
+    """
+    Вывод истории запросов о погоде из базы данных.
+
+    Аргумент:
+    n - количество последних запросов.
+    """
+
     if n < 0:
         print("Введите значение n > 0")
     else:
@@ -95,9 +128,13 @@ def print_history(n):
             else:
                 print("История запросов пуста.")
         except sqlite3.Error as error:
-            print("Ошибка при работе с базой данных:", error)
+            print("Ошибка при работе с базой данных, попробуйте снова!")
 
 def main():
+    """
+    Обрабатка аргументов командной строки и вызывание соответствующей функции.
+    """
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--city", help="get weather by city")
     parser.add_argument("--location", action="store_true", help="get weather by current location")
