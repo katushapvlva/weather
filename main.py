@@ -2,7 +2,7 @@ import requests
 import geocoder
 import sqlite3
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 API_KEY = "149e2a0058107922f6aff6ee2e05113d"
 
@@ -22,13 +22,12 @@ def get_weather_by_city(city: str):
         weather_data = response.json()
 
         print_weather_info(city, weather_data)
-        save_to_database((datetime.now(), city, weather_data["weather"][0]["description"], weather_data["main"]["temp"]))
+        save_to_database((datetime.now(), city, weather_data["weather"][0]["description"], weather_data["main"]["temp"], weather_data["main"]["feels_like"], weather_data["wind"]["speed"]))
     except requests.exceptions.HTTPError as err:
         print(f"HTTP error occurred, попробуйте снова!")
     except requests.exceptions.RequestException as err:
         print(f"Request exception occurred, попробуйте снова!")
 
-# Функция для вывода информации о погоде
 def print_weather_info(location: str, weather_data: dict):
     """
     Вывод информации о погоде.
@@ -38,7 +37,23 @@ def print_weather_info(location: str, weather_data: dict):
     weather_data - данные о погоде.
     """
 
-    print("Текущее время:", datetime.fromtimestamp(weather_data["dt"]).strftime('%Y-%m-%d %H:%M:%S'))
+    # Получаем UTC временную метку из данных о погоде
+    utc_timestamp = weather_data["dt"]
+    
+    # Получаем смещение временной зоны в формате ±HHMM
+    offset = weather_data["timezone"]
+    hours = offset // 3600
+    minutes = (offset % 3600) // 60
+    sign = '+' if offset >= 0 else '-'
+    formatted_offset = f"{sign}{abs(hours):02d}:{abs(minutes):02d}"
+
+    # Преобразуем UTC временную метку в локальное время с учетом смещения
+    local_time = datetime.utcfromtimestamp(utc_timestamp) + timedelta(hours=hours, minutes=minutes)
+
+    # Форматируем время в нужный формат с смещением временной зоны
+    formatted_time = local_time.strftime('%Y-%m-%d %H:%M:%S') + formatted_offset
+
+    print("Текущее время:", formatted_time)
     print("Название города:", location)
     print("Погодные условия:", weather_data["weather"][0]["description"])
     print("Текущая температура:", weather_data["main"]["temp"], "градусов по Цельсию")
@@ -62,7 +77,7 @@ def get_weather_by_location():
             weather_data = response.json()
            
             print_weather_info(location.address, weather_data)
-            save_to_database((datetime.now(), location.address, weather_data["weather"][0]["description"], weather_data["main"]["temp"]))
+            save_to_database((datetime.now(), location.address, weather_data["weather"][0]["description"], weather_data["main"]["temp"], weather_data["main"]["feels_like"], weather_data["wind"]["speed"]))
         else:
             print("Не удалось определить текущее местоположение")
     except requests.exceptions.HTTPError as err:
@@ -70,7 +85,6 @@ def get_weather_by_location():
     except requests.exceptions.RequestException as err:
         print(f"Request exception occurred, попробуйте снова!")
 
-# Функция для сохранения результатов запросов в базу данных
 def save_to_database(data: tuple):
     """
     Сохранение результатов запросов в базу данных.
@@ -89,28 +103,33 @@ def save_to_database(data: tuple):
                           timestamp DATETIME, 
                           city TEXT, 
                           weather_condition TEXT, 
-                          temperature FLOAT)''')
+                          temperature FLOAT,
+                          feeling FLOAT,
+                          speed FLOAT)''')
+
+        # Форматируем время перед вставкой в базу данных
+        formatted_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Вставляем данные в таблицу
-        cursor.execute("INSERT INTO weather_requests (timestamp, city, weather_condition, temperature) VALUES (?, ?, ?, ?)", data)
+        cursor.execute("INSERT INTO weather_requests (timestamp, city, weather_condition, temperature, feeling, speed) VALUES (?, ?, ?, ?, ?, ?)", (formatted_time,) + data[1:])
         connection.commit()
         connection.close()
     except sqlite3.Error as error:
         print("Ошибка при работе с базой данных, попробуйте снова!")
 
-# Функция для вывода последних результатов запросов из базы данных
-def print_history(n: int):
+def print_history(n: str):
     """
     Вывод истории запросов о погоде из базы данных.
 
     Аргумент:
-    n - количество последних запросов.
+    n - количество последних запросов (str).
     """
 
-    if n < 0:
-        print("Введите значение n > 0")
-    else:
-        try:
+    try:
+        n = int(n)
+        if n < 0:
+            print("Введите значение n > 0")
+        else:
             connection = sqlite3.connect("weather.db")
             cursor = connection.cursor()
             cursor.execute(f"SELECT * FROM weather_requests ORDER BY timestamp DESC LIMIT {n}")
@@ -119,36 +138,66 @@ def print_history(n: int):
 
             if results:
                 print("Последние", n, "запросов:")
+                print("=" * 20)
                 for result in results:
                     print("Время запроса:", result[1])
                     print("Название города:", result[2])
                     print("Погодные условия:", result[3])
-                    print("Температура:", result[4])
-                    print("="*20)
+                    print("Температура:", result[4], "градусов по Цельсию")
+                    print("Ощущение:", result[5], "градусов по Цельсию")
+                    print("Скорость ветра:", result[6], "м/c")
+                    print("=" * 20)
             else:
                 print("История запросов пуста.")
-        except sqlite3.Error as error:
-            print("Ошибка при работе с базой данных, попробуйте снова!")
+    except ValueError:
+        print("Введите целое число для 'history'.")
+    except sqlite3.Error as error:
+        print("Ошибка при работе с базой данных, попробуйте снова!")
 
 def main():
     """
-    Обработка аргументов командной строки и вызывание соответствующей функции.
+    Обработка команд пользователя и вызов соответствующих функций.
+
+    Функция выводит список доступных команд и предлагает пользователю ввести одну из них.
+    Пользователь может выбрать одну из следующих команд:
+        - 'city': получить информацию о погоде по названию города;
+        - 'location': получить информацию о погоде по текущему местоположению;
+        - 'history': получить историю запросов о погоде;
+        - 'exit': завершить выполнение программы.
+
+    После ввода одной из команд программа запускает соответствующую функцию.
     """
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--city", help="get weather by city")
-    parser.add_argument("--location", action="store_true", help="get weather by current location")
-    parser.add_argument("--history", type=int, help="print history of requests")
-    args = parser.parse_args()
+    commands = {
+        'city': 'погода по названию городу',
+        'location': 'погода по текущему местоположению',
+        'history': 'история запросов',
+        'exit': 'выход'
+    }
 
-    if args.city:
-        get_weather_by_city(args.city)
-    elif args.location:
-        get_weather_by_location()
-    elif args.history:
-        print_history(args.history)
-    else:
-        parser.print_help()
+    while True:
+        print("\nДоступные команды:")
+        for cmd, desc in commands.items():
+            print(f"'{cmd}' - {desc}")
+
+        user_input = input("\nВыберите одну из команд и введите её: ")
+
+        if user_input == 'exit':
+            print("Завершение программы.")
+            break
+        elif user_input == 'city':
+            city = input("Введите название города: ")
+            print()
+            get_weather_by_city(city)
+        elif user_input == 'location':
+            print()
+            get_weather_by_location()
+        elif user_input == 'history':
+            n = input("Введите количество последних запросов: ")
+            print()
+            print_history(n)
+        else:
+            print("Неизвестная команда. Пожалуйста, выберите из предложенного списка.")
 
 if __name__ == "__main__":
     main()
