@@ -1,12 +1,10 @@
 import requests
 import geocoder
 import sqlite3
-import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 API_KEY = "149e2a0058107922f6aff6ee2e05113d"
 
-# Функция для получения информации о погоде по названию города
 def get_weather_by_city(city: str):
     """
     Получение информации о погоде по названию города.
@@ -16,17 +14,17 @@ def get_weather_by_city(city: str):
     """
 
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric"
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric&lang=ru"
         response = requests.get(url)
         response.raise_for_status()  # Проверяем наличие ошибок при запросе
         weather_data = response.json()
 
         print_weather_info(city, weather_data)
         save_to_database((datetime.now(), city, weather_data["weather"][0]["description"], weather_data["main"]["temp"], weather_data["main"]["feels_like"], weather_data["wind"]["speed"]))
-    except requests.exceptions.HTTPError as err:
-        print(f"HTTP error occurred, попробуйте снова!")
+    except requests.exceptions.HTTPError:
+        print(f"Город не найден, попробуйте снова!")
     except requests.exceptions.RequestException as err:
-        print(f"Request exception occurred, попробуйте снова!")
+        print(f"Request exception occurred: {err}, попробуйте снова!")
 
 def print_weather_info(location: str, weather_data: dict):
     """
@@ -42,16 +40,12 @@ def print_weather_info(location: str, weather_data: dict):
     
     # Получаем смещение временной зоны в формате ±HHMM
     offset = weather_data["timezone"]
-    hours = offset // 3600
-    minutes = (offset % 3600) // 60
-    sign = '+' if offset >= 0 else '-'
-    formatted_offset = f"{sign}{abs(hours):02d}:{abs(minutes):02d}"
 
-    # Преобразуем UTC временную метку в локальное время с учетом смещения
-    local_time = datetime.utcfromtimestamp(utc_timestamp) + timedelta(hours=hours, minutes=minutes)
+    tz = timezone(timedelta(seconds=offset))
+    result_time = datetime.fromtimestamp(utc_timestamp, tz)
 
     # Форматируем время в нужный формат с смещением временной зоны
-    formatted_time = local_time.strftime('%Y-%m-%d %H:%M:%S') + formatted_offset
+    formatted_time = result_time
 
     print("Текущее время:", formatted_time)
     print("Название города:", location)
@@ -60,7 +54,6 @@ def print_weather_info(location: str, weather_data: dict):
     print("Ощущается как:", weather_data["main"]["feels_like"], "градусов по Цельсию")
     print("Скорость ветра:", weather_data["wind"]["speed"], "м/c")
 
-# Функция для получения информации о погоде по текущему местоположению
 def get_weather_by_location():
     """
     Получение информации о погоде по текущему местоположению.
@@ -71,7 +64,7 @@ def get_weather_by_location():
 
         if location:
             latitude, longitude = location.latlng
-            url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={API_KEY}&units=metric"
+            url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={API_KEY}&units=metric&lang=ru"
             response = requests.get(url)
             response.raise_for_status()  # Проверяем наличие ошибок при запросе
             weather_data = response.json()
@@ -81,9 +74,9 @@ def get_weather_by_location():
         else:
             print("Не удалось определить текущее местоположение")
     except requests.exceptions.HTTPError as err:
-        print(f"HTTP error occurred, попробуйте снова!")
+        print(f"HTTP error occurred: {err}, попробуйте снова!")
     except requests.exceptions.RequestException as err:
-        print(f"Request exception occurred, попробуйте снова!")
+        print(f"Request exception occurred: {err}, попробуйте снова!")
 
 def save_to_database(data: tuple):
     """
@@ -136,21 +129,21 @@ def print_history(n: str):
             results = cursor.fetchall()
             connection.close()
 
-            if results:
-                print("Последние", n, "запросов:")
+            print("Последние", n, "запросов:")
+            print("=" * 20)
+            for result in results:
+                print("Время запроса:", result[1])
+                print("Название города:", result[2])
+                print("Погодные условия:", result[3])
+                print("Температура:", result[4], "градусов по Цельсию")
+                print("Ощущение:", result[5], "градусов по Цельсию")
+                print("Скорость ветра:", result[6], "м/c")
                 print("=" * 20)
-                for result in results:
-                    print("Время запроса:", result[1])
-                    print("Название города:", result[2])
-                    print("Погодные условия:", result[3])
-                    print("Температура:", result[4], "градусов по Цельсию")
-                    print("Ощущение:", result[5], "градусов по Цельсию")
-                    print("Скорость ветра:", result[6], "м/c")
-                    print("=" * 20)
-            else:
-                print("История запросов пуста.")
+            
     except ValueError:
         print("Введите целое число для 'history'.")
+    except sqlite3.OperationalError:
+        print("История запросов пуста.")
     except sqlite3.Error as error:
         print("Ошибка при работе с базой данных, попробуйте снова!")
 
@@ -167,9 +160,9 @@ def main():
 
     После ввода одной из команд программа запускает соответствующую функцию.
     """
-
+    
     commands = {
-        'city': 'погода по названию городу',
+        'city': 'погода по названию города',
         'location': 'погода по текущему местоположению',
         'history': 'история запросов',
         'exit': 'выход'
@@ -180,20 +173,20 @@ def main():
         for cmd, desc in commands.items():
             print(f"'{cmd}' - {desc}")
 
-        user_input = input("\nВыберите одну из команд и введите её: ")
+        user_input = input("\nВыберите одну из команд и введите её: ").strip()
 
         if user_input == 'exit':
             print("Завершение программы.")
             break
         elif user_input == 'city':
-            city = input("Введите название города: ")
+            city = input("Введите название города: ").strip()
             print()
             get_weather_by_city(city)
         elif user_input == 'location':
             print()
             get_weather_by_location()
         elif user_input == 'history':
-            n = input("Введите количество последних запросов: ")
+            n = input("Введите количество последних запросов: ").strip()
             print()
             print_history(n)
         else:
